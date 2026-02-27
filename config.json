@@ -2,9 +2,9 @@
     "museum": "prado",
     "room": "sala12",
     "artwork": "las_meninas",
-    "t_max_c": 25.0,
-    "rh_max_pct": 55.0,
-    "theft_accel_g_threshold": 1.50,
+    "t_max_c": 40.0,
+    "rh_max_pct": 40.0,
+    "theft_accel_g_threshold": 1.30,
     "telemetry_period_s": 5,
     "mqtt": {
       "host": "broker.hivemq.com",

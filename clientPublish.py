@@ -3,6 +3,7 @@ import json
 import math
 import time
 from datetime import datetime, timezone
+from typing import Optional
 
 from sense_hat import SenseHat
 import paho.mqtt.client as mqtt
@@ -23,7 +24,7 @@ def border(color, inner=OFF):
     px = []
     for y in range(8):
         for x in range(8):
-            if x in (0,7) or y in (0,7):
+            if x in (0, 7) or y in (0, 7):
                 px.append(color)
             else:
                 px.append(inner)
@@ -53,7 +54,7 @@ class MuseumGuard:
 
         # --- HOLD de alarmas (10 s) ---
         self._alarm_until = 0.0
-        self._alarm_type_hold = None
+        self._alarm_type_hold = None  # "THEFT" | "TEMP" | "HUM" | None
         self._alarm_hold_s = 10.0
 
     def accel_magnitude_g(self) -> float:
@@ -71,30 +72,24 @@ class MuseumGuard:
         self.client.publish(self.topic_alarm, payload, qos=1)
 
     def show_alarm(self, alarm_type: str):
-        # patrones distintos para que se distingan a simple vista
         if alarm_type == "THEFT":
-            # parpadeo rojo rápido
             self.sense.set_pixels(checkerboard(RED, OFF))
             time.sleep(0.15)
             self.sense.clear(RED)
             time.sleep(0.15)
         elif alarm_type == "TEMP":
-            # borde amarillo
             self.sense.set_pixels(border(YELLOW))
         elif alarm_type == "HUM":
-            # tablero azul
             self.sense.set_pixels(checkerboard(BLUE, OFF))
         else:
             self.sense.clear()
 
-    def set_hold(self, alarm_type: str, hold_s: float | None = None):
-        """Activa/renueva el hold de la alarma."""
+    def set_hold(self, alarm_type: str, hold_s: Optional[float] = None):
         hs = self._alarm_hold_s if hold_s is None else float(hold_s)
         self._alarm_type_hold = alarm_type
         self._alarm_until = time.time() + hs
 
     def apply_hold_display_if_needed(self) -> bool:
-        """Si hay hold activo, mantiene la alarma en la matriz. Devuelve True si está aplicando hold."""
         if self._alarm_type_hold is None:
             return False
         if time.time() < self._alarm_until:
@@ -120,33 +115,32 @@ class MuseumGuard:
 
                 # Prioridad: THEFT > TEMP > HUM
                 if ag > self.theft_thr:
-                    self.set_hold("THEFT", 10.0)   # HOLD 10 s
+                    self.set_hold("THEFT", 10.0)
                     self.show_alarm("THEFT")
                     if now - self._last_alarm_ts > 1.0:
                         self.publish_alarm("THEFT", ag, self.theft_thr, "CRITICAL")
                         self._last_alarm_ts = now
 
                 elif t_c > self.t_max:
-                    self.set_hold("TEMP", 10.0)    # HOLD 10 s
+                    self.set_hold("TEMP", 10.0)
                     self.show_alarm("TEMP")
                     if now - self._last_alarm_ts > 3.0:
                         self.publish_alarm("TEMP", t_c, self.t_max, "WARNING")
                         self._last_alarm_ts = now
 
                 elif rh > self.rh_max:
-                    self.set_hold("HUM", 10.0)     # HOLD 10 s
+                    self.set_hold("HUM", 10.0)
                     self.show_alarm("HUM")
                     if now - self._last_alarm_ts > 3.0:
                         self.publish_alarm("HUM", rh, self.rh_max, "WARNING")
                         self._last_alarm_ts = now
 
                 else:
-                    # Si no hay alarma nueva, aplica hold si existe; si no, limpia.
                     holding = self.apply_hold_display_if_needed()
                     if not holding:
                         self.sense.clear()
 
-                # Telemetría periódica + PRINT sin datetime
+                # Telemetría + print sin datetime
                 if now - last_telemetry >= period:
                     print(f"T={t_c:.2f} ºC | RH={rh:.2f} % | accel={ag:.3f} g", flush=True)
 

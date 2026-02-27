@@ -51,6 +51,11 @@ class MuseumGuard:
 
         self._last_alarm_ts = 0.0
 
+        # --- HOLD de alarmas (10 s) ---
+        self._alarm_until = 0.0
+        self._alarm_type_hold = None
+        self._alarm_hold_s = 10.0
+
     def accel_magnitude_g(self) -> float:
         a = self.sense.get_accelerometer_raw()
         return math.sqrt(a["x"]**2 + a["y"]**2 + a["z"]**2)
@@ -63,7 +68,6 @@ class MuseumGuard:
             "value": round(value, 3),
             "threshold": threshold
         })
-        # qos=1 como en tu borrador
         self.client.publish(self.topic_alarm, payload, qos=1)
 
     def show_alarm(self, alarm_type: str):
@@ -83,6 +87,22 @@ class MuseumGuard:
         else:
             self.sense.clear()
 
+    def set_hold(self, alarm_type: str, hold_s: float | None = None):
+        """Activa/renueva el hold de la alarma."""
+        hs = self._alarm_hold_s if hold_s is None else float(hold_s)
+        self._alarm_type_hold = alarm_type
+        self._alarm_until = time.time() + hs
+
+    def apply_hold_display_if_needed(self) -> bool:
+        """Si hay hold activo, mantiene la alarma en la matriz. Devuelve True si está aplicando hold."""
+        if self._alarm_type_hold is None:
+            return False
+        if time.time() < self._alarm_until:
+            self.show_alarm(self._alarm_type_hold)
+            return True
+        self._alarm_type_hold = None
+        return False
+
     def run(self):
         print("MuseumGuard iniciado.")
         print("Telemetry:", self.topic_telemetry)
@@ -98,33 +118,38 @@ class MuseumGuard:
                 rh = self.sense.get_humidity()
                 ag = self.accel_magnitude_g()
 
-                alarm_type = None
-
                 # Prioridad: THEFT > TEMP > HUM
                 if ag > self.theft_thr:
-                    alarm_type = "THEFT"
-                    self.show_alarm(alarm_type)
-                    # evita spamear alarmas a cada iteración
+                    self.set_hold("THEFT", 10.0)   # HOLD 10 s
+                    self.show_alarm("THEFT")
                     if now - self._last_alarm_ts > 1.0:
                         self.publish_alarm("THEFT", ag, self.theft_thr, "CRITICAL")
                         self._last_alarm_ts = now
+
                 elif t_c > self.t_max:
-                    alarm_type = "TEMP"
-                    self.show_alarm(alarm_type)
+                    self.set_hold("TEMP", 10.0)    # HOLD 10 s
+                    self.show_alarm("TEMP")
                     if now - self._last_alarm_ts > 3.0:
                         self.publish_alarm("TEMP", t_c, self.t_max, "WARNING")
                         self._last_alarm_ts = now
+
                 elif rh > self.rh_max:
-                    alarm_type = "HUM"
-                    self.show_alarm(alarm_type)
+                    self.set_hold("HUM", 10.0)     # HOLD 10 s
+                    self.show_alarm("HUM")
                     if now - self._last_alarm_ts > 3.0:
                         self.publish_alarm("HUM", rh, self.rh_max, "WARNING")
                         self._last_alarm_ts = now
-                else:
-                    self.sense.clear()
 
-                # telemetría periódica
+                else:
+                    # Si no hay alarma nueva, aplica hold si existe; si no, limpia.
+                    holding = self.apply_hold_display_if_needed()
+                    if not holding:
+                        self.sense.clear()
+
+                # Telemetría periódica + PRINT sin datetime
                 if now - last_telemetry >= period:
+                    print(f"T={t_c:.2f} ºC | RH={rh:.2f} % | accel={ag:.3f} g", flush=True)
+
                     payload = json.dumps({
                         "ts": datetime.now(timezone.utc).isoformat(),
                         "t_c": round(t_c, 2),

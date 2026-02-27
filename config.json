@@ -1,0 +1,14 @@
+{
+    "museum": "prado",
+    "room": "sala12",
+    "artwork": "las_meninas",
+    "t_max_c": 25.0,
+    "rh_max_pct": 55.0,
+    "theft_accel_g_threshold": 1.50,
+    "telemetry_period_s": 5,
+    "mqtt": {
+      "host": "broker.hivemq.com",
+      "port": 1883,
+      "client_id": "museumguard-node-01"
+    }
+  }
